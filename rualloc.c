@@ -40,29 +40,24 @@ static void *mremap(void *old_addr, size_t old_length, size_t new_length, int fl
 #define MREMAP_MAYMOVE 0x1
 #endif
 
-#define pure_to_impure(x) ((void *)((unsigned char *)(x) - sizeof(size_t)))
-#define impure_to_pure(x) ((void *)((unsigned char *)(x) + sizeof(size_t)))
-#define pure_size(x) (((size_t *)x)[-1])
-#define impure_size(x) (((size_t *)x)[0])
-#define header_length sizeof(size_t)
+#define header_length (-(~0xFULL & (-sizeof(size_t))))
+#define pure_to_impure(x) ((void *)((unsigned char *)(x) - header_length))
+#define impure_to_pure(x) ((void *)((unsigned char *)(x) + header_length))
+#define impure_size(x) (*(size_t *)(x))
+#define pure_size(x) impure_size(pure_to_impure(x))
 
 void *malloc(size_t sz)
 {
-	if(sz)
+	void *addr = mmap(NULL, sz + header_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if(addr == (void *)-1)
 	{
-		void *addr = mmap(NULL, sz + header_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		if(addr == (void *)-1)
-		{
-			return NULL;
-		}
-		else
-		{
-			impure_size(addr) = sz;
-			return impure_to_pure(addr);
-		}
+		return NULL;
 	}
 	else
-		return NULL;
+	{
+		impure_size(addr) = sz;
+		return impure_to_pure(addr);
+	}
 }
 
 void free(void *addr)
